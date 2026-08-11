@@ -347,7 +347,10 @@
     </div>
     <button class="btn btn-primary btn-block" id="connectSyncBtn">Connect & Sync</button>
     <button class="btn btn-mustard btn-block" style="margin-top:8px;" id="refreshNowBtn">Refresh Now</button>
-    <div style="font-size:12px; color:var(--ink-soft); text-align:center; margin-top:8px;" id="lastSyncedNote"></div>
+    <div class="card" id="syncDebugCard" style="margin-top:12px; padding:10px 12px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--ink-soft); margin-bottom:6px;">Connection Details</div>
+      <div class="mono" id="syncDebugLog" style="font-size:12px; line-height:1.6; white-space:pre-wrap;">Not connected yet.</div>
+    </div>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="disconnectSyncBtn">Disconnect This Device</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelSyncBtn">Close</button>
   </div>
@@ -400,9 +403,16 @@
     }
   }
 
-  function noteLastSynced(){
-    const el = $('lastSyncedNote');
-    if(el) el.textContent = 'Last synced ' + new Date().toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+  function logSync(msg){
+    const el = $('syncDebugLog');
+    if(!el) return;
+    const time = new Date().toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const projectId = (cloudEnabled && window.__stallDb) ? (window.__stallDb.app.options.projectId || '?') : '—';
+    el.textContent =
+      'Stall code: ' + (cloudStallId || '—') + '\n' +
+      'Firebase project: ' + projectId + '\n' +
+      'Products: ' + products.length + ' · Sales: ' + sales.length + '\n' +
+      '[' + time + '] ' + msg;
   }
 
   async function pullOnce(){
@@ -424,12 +434,14 @@
         await storeSet('stallName', JSON.stringify(stallName));
         applyingRemoteUpdate = false;
         render();
-        noteLastSynced();
+        logSync('Manual refresh pulled latest cloud data.');
         showToast('Refreshed');
       } else {
+        logSync('No cloud document found for this stall code.');
         showToast('No cloud data found yet for this stall code');
       }
     }catch(e){
+      logSync('ERROR refreshing: ' + e.message);
       showToast('Could not refresh — check connection');
     }
   }
@@ -446,8 +458,10 @@
       localStorage.setItem('cloudSyncConfig', JSON.stringify({ config, stallId }));
       listenCloud();
       updateSyncStatus();
+      logSync('Connected. Waiting for data...');
       showToast('Connected — syncing now');
     }catch(e){
+      logSync('ERROR connecting: ' + e.message);
       showToast('Could not connect. Check the config.');
     }
   }
@@ -467,11 +481,13 @@
         await storeSet('stallName', JSON.stringify(stallName));
         applyingRemoteUpdate = false;
         render();
-        noteLastSynced();
+        logSync('Live update received from cloud.');
       } else {
+        logSync('No cloud document yet — creating one from this device.');
         pushCloud();
       }
     }, err=>{
+      logSync('ERROR listening: ' + err.message);
       showToast('Sync connection lost');
     });
   }
@@ -482,7 +498,9 @@
       await window.__stallDb.collection('stalls').doc(cloudStallId).set({
         products, sales, stallName, updatedAt: Date.now()
       });
+      logSync('Pushed local changes to cloud.');
     }catch(e){
+      logSync('ERROR pushing to cloud: ' + e.message);
       showToast('Could not sync to cloud');
     }
   }
@@ -791,6 +809,7 @@
   // ---- Sync sheet ----
   $('syncBtn').addEventListener('click', ()=>{
     if(cloudStallId) $('stallIdInput').value = cloudStallId;
+    if(cloudEnabled) logSync('Sheet opened.');
     $('syncOverlay').classList.add('open');
   });
   $('cancelSyncBtn').addEventListener('click', ()=> $('syncOverlay').classList.remove('open'));

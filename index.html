@@ -766,9 +766,18 @@
     }
     let config;
     try{
-      config = new Function('return (' + raw + ')')();
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if(start === -1 || end === -1 || end < start){
+        throw new Error('No object found');
+      }
+      const objText = raw.slice(start, end + 1);
+      config = new Function('return (' + objText + ')')();
+      if(!config || typeof config !== 'object' || !config.apiKey){
+        throw new Error('Missing apiKey');
+      }
     }catch(e){
-      showToast('Could not read that config — check it was pasted fully');
+      showToast('Could not read that config — paste the whole { ... } object');
       return;
     }
     connectCloud(config, stallId);

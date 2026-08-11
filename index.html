@@ -346,6 +346,8 @@
       <textarea id="firebaseConfigInput" rows="6" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:'Space Mono'; font-size:12px; background:#fff; color:var(--ink);" placeholder='{ apiKey: "...", projectId: "...", ... }'></textarea>
     </div>
     <button class="btn btn-primary btn-block" id="connectSyncBtn">Connect & Sync</button>
+    <button class="btn btn-mustard btn-block" style="margin-top:8px;" id="refreshNowBtn">Refresh Now</button>
+    <div style="font-size:12px; color:var(--ink-soft); text-align:center; margin-top:8px;" id="lastSyncedNote"></div>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="disconnectSyncBtn">Disconnect This Device</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelSyncBtn">Close</button>
   </div>
@@ -398,6 +400,40 @@
     }
   }
 
+  function noteLastSynced(){
+    const el = $('lastSyncedNote');
+    if(el) el.textContent = 'Last synced ' + new Date().toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+  }
+
+  async function pullOnce(){
+    if(!cloudEnabled || !window.__stallDb){
+      showToast('Connect to sync first');
+      return;
+    }
+    try{
+      const doc = await window.__stallDb.collection('stalls').doc(cloudStallId).get({ source: 'server' });
+      if(doc.exists){
+        const data = doc.data();
+        applyingRemoteUpdate = true;
+        products = data.products || [];
+        sales = data.sales || [];
+        stallName = data.stallName || stallName;
+        $('stallNameHeader').textContent = stallName;
+        await storeSet('products', JSON.stringify(products));
+        await storeSet('sales', JSON.stringify(sales));
+        await storeSet('stallName', JSON.stringify(stallName));
+        applyingRemoteUpdate = false;
+        render();
+        noteLastSynced();
+        showToast('Refreshed');
+      } else {
+        showToast('No cloud data found yet for this stall code');
+      }
+    }catch(e){
+      showToast('Could not refresh — check connection');
+    }
+  }
+
   function connectCloud(config, stallId){
     try{
       if(!firebase.apps || !firebase.apps.length){
@@ -431,6 +467,7 @@
         await storeSet('stallName', JSON.stringify(stallName));
         applyingRemoteUpdate = false;
         render();
+        noteLastSynced();
       } else {
         pushCloud();
       }
@@ -757,6 +794,7 @@
     $('syncOverlay').classList.add('open');
   });
   $('cancelSyncBtn').addEventListener('click', ()=> $('syncOverlay').classList.remove('open'));
+  $('refreshNowBtn').addEventListener('click', pullOnce);
   $('connectSyncBtn').addEventListener('click', ()=>{
     const stallId = $('stallIdInput').value.trim();
     const raw = $('firebaseConfigInput').value.trim();

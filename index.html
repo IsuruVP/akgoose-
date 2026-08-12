@@ -256,6 +256,7 @@
     <div class="tab" id="tab-sell">
       <div class="card" style="margin-bottom:14px;">
         <h2>Tap a product to sell</h2>
+        <input type="text" id="sellSearch" placeholder="Search products…" style="width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:'Inter'; font-size:15px; background:#fff; color:var(--ink); margin-bottom:12px;">
         <div class="product-grid" id="sellGrid"></div>
         <div class="empty" id="sellEmpty" style="display:none;">No products yet. Add stock in the Stock tab first.</div>
       </div>
@@ -754,7 +755,15 @@
       return;
     }
     $('sellEmpty').style.display = 'none';
-    $('sellGrid').innerHTML = products.map(p=>`
+    const query = ($('sellSearch').value || '').trim().toLowerCase();
+    const sorted = [...products]
+      .filter(p => !query || p.name.toLowerCase().includes(query))
+      .sort((a,b)=> a.name.localeCompare(b.name, undefined, {sensitivity:'base'}));
+    if(sorted.length===0){
+      $('sellGrid').innerHTML = '<div class="empty">No products match your search.</div>';
+      return;
+    }
+    $('sellGrid').innerHTML = sorted.map(p=>`
       <button class="product-tile ${p.stock<=0?'out':''}" data-id="${p.id}" ${p.stock<=0?'disabled':''}>
         <div class="pname">${escapeHtml(p.name)}</div>
         <div class="pprice">${fmt(p.price)}</div>
@@ -846,6 +855,7 @@
 
   // ---- Product add/edit sheet ----
   $('addProductBtn').addEventListener('click', ()=> openProductSheet(null));
+  $('sellSearch').addEventListener('input', renderSell);
 
   $('addExpenseBtn').addEventListener('click', async ()=>{
     const note = $('eNote').value.trim();

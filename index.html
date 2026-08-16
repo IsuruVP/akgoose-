@@ -454,6 +454,7 @@
   let sellingProduct = null;
   let sellQty = 1;
   let cloudEnabled = false;
+  let currentDayDetailDate = null;
   let cloudStallId = null;
   let cloudUnsub = null;
   let applyingRemoteUpdate = false;
@@ -759,9 +760,15 @@
         const time = new Date(s.ts).toLocaleString('en-LK', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'});
         return `<div class="list-row">
           <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}</div></div>
-          <span class="pill mono">${fmt(s.total)}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pill mono">${fmt(s.total)}</span>
+            <button class="btn-danger-text" data-del-sale="${s.id}">✕</button>
+          </div>
         </div>`;
       }).join('');
+      document.querySelectorAll('#recentSalesList [data-del-sale]').forEach(el=>{
+        el.addEventListener('click', ()=> deleteSale(el.dataset.delSale));
+      });
     }
   }
 
@@ -987,6 +994,7 @@
 
   // ---- Day detail sheet ----
   function openDayDetail(dateStr){
+    currentDayDetailDate = dateStr;
     const daySales = sales.filter(s => isoDateLocal(s.ts) === dateStr);
     const dayExpenses = expenses.filter(e => isoDateLocal(e.ts) === dateStr);
     const revenue = daySales.reduce((a,s)=>a+s.total,0);
@@ -1011,9 +1019,15 @@
         const time = new Date(s.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
         return `<div class="list-row">
           <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}</div></div>
-          <span class="pill mono">${fmt(s.total)}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pill mono">${fmt(s.total)}</span>
+            <button class="btn-danger-text" data-del-sale-detail="${s.id}">✕</button>
+          </div>
         </div>`;
       }).join('');
+      document.querySelectorAll('#dayDetailSalesList [data-del-sale-detail]').forEach(el=>{
+        el.addEventListener('click', ()=> deleteSale(el.dataset.delSaleDetail, true));
+      });
     }
 
     if(dayExpenses.length===0){
@@ -1023,13 +1037,41 @@
         const time = new Date(e.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
         return `<div class="list-row">
           <div><div class="name">${escapeHtml(e.note)}</div><div class="meta">${escapeHtml(e.category)} · ${time}</div></div>
-          <span class="pill mono">${fmt(e.amount)}</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pill mono">${fmt(e.amount)}</span>
+            <button class="btn-danger-text" data-del-expense-detail="${e.id}">✕</button>
+          </div>
         </div>`;
       }).join('');
+      document.querySelectorAll('#dayDetailExpensesList [data-del-expense-detail]').forEach(el=>{
+        el.addEventListener('click', async ()=>{
+          expenses = expenses.filter(x=>x.id!==el.dataset.delExpenseDetail);
+          await saveExpenses();
+          render();
+          openDayDetail(currentDayDetailDate);
+          showToast('Expense removed');
+        });
+      });
     }
 
     $('dayDetailOverlay').classList.add('open');
   }
+
+  async function deleteSale(saleId, fromDayDetail){
+    const sale = sales.find(s=>s.id===saleId);
+    if(!sale) return;
+    const prod = products.find(p=>p.id===sale.productId);
+    if(prod){
+      prod.stock += sale.qty;
+      await saveProducts();
+    }
+    sales = sales.filter(s=>s.id!==saleId);
+    await saveSales();
+    render();
+    if(fromDayDetail && currentDayDetailDate) openDayDetail(currentDayDetailDate);
+    showToast(prod ? 'Sale removed, stock restored' : 'Sale removed');
+  }
+
   $('closeDayDetailBtn').addEventListener('click', ()=> $('dayDetailOverlay').classList.remove('open'));
   $('dayDetailOverlay').addEventListener('click', (e)=>{ if(e.target===$('dayDetailOverlay')) $('dayDetailOverlay').classList.remove('open'); });
   $('dayPicker').addEventListener('change', ()=>{

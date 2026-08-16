@@ -238,6 +238,10 @@
 
       <div class="card">
         <h2>Day by Day Revenue</h2>
+        <div class="field" style="margin-bottom:10px;">
+          <label>Jump to a date</label>
+          <input type="date" id="dayPicker">
+        </div>
         <div id="dailyRevenueList"><div class="empty">No sales recorded yet.</div></div>
       </div>
 
@@ -400,6 +404,41 @@
     </div>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="disconnectSyncBtn">Disconnect This Device</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelSyncBtn">Close</button>
+  </div>
+</div>
+
+<!-- Day detail sheet -->
+<div class="overlay" id="dayDetailOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h3 id="dayDetailTitle">Day</h3>
+    <div class="stat-grid" style="margin:14px 0;">
+      <div class="stat-tile">
+        <div class="label">Revenue</div>
+        <div class="val" id="dayDetailRevenue">Rs 0</div>
+      </div>
+      <div class="stat-tile">
+        <div class="label">Net profit</div>
+        <div class="val" id="dayDetailNet">Rs 0</div>
+      </div>
+      <div class="stat-tile">
+        <div class="label">Items sold</div>
+        <div class="val" id="dayDetailUnits">0</div>
+      </div>
+      <div class="stat-tile">
+        <div class="label">Expenses</div>
+        <div class="val" id="dayDetailExpenses">Rs 0</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Sales</h2>
+      <div id="dayDetailSalesList"><div class="empty">No sales this day.</div></div>
+    </div>
+    <div class="card">
+      <h2>Expenses</h2>
+      <div id="dayDetailExpensesList"><div class="empty">No expenses this day.</div></div>
+    </div>
+    <button class="btn btn-outline btn-block" id="closeDayDetailBtn">Close</button>
   </div>
 </div>
 
@@ -582,6 +621,14 @@
     return new Date(ts).toDateString();
   }
 
+  function isoDateLocal(ts){
+    const d = new Date(ts);
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
   function profitOf(sale){
     // uses cost snapshot stored on the sale; falls back to current product cost
     const cost = (sale.cost !== undefined) ? sale.cost : (products.find(p=>p.id===sale.productId)?.cost || 0);
@@ -659,26 +706,29 @@
     } else {
       const byDay = {};
       sales.forEach(s=>{
-        const key = todayKey(s.ts);
+        const key = isoDateLocal(s.ts);
         if(!byDay[key]) byDay[key] = { ts:s.ts, revenue:0, profit:0, units:0, expenses:0 };
         byDay[key].revenue += s.total;
         byDay[key].profit += profitOf(s);
         byDay[key].units += s.qty;
       });
       expenses.forEach(e=>{
-        const key = todayKey(e.ts);
+        const key = isoDateLocal(e.ts);
         if(!byDay[key]) byDay[key] = { ts:e.ts, revenue:0, profit:0, units:0, expenses:0 };
         byDay[key].expenses += e.amount;
       });
-      const days = Object.values(byDay).sort((a,b)=>b.ts-a.ts).slice(0,14);
-      $('dailyRevenueList').innerHTML = days.map(d=>{
+      const dayEntries = Object.entries(byDay).sort((a,b)=>b[1].ts-a[1].ts).slice(0,14);
+      $('dailyRevenueList').innerHTML = dayEntries.map(([key,d])=>{
         const label = new Date(d.ts).toLocaleDateString('en-LK', {weekday:'short', day:'2-digit', month:'short'});
         const net = d.profit - d.expenses;
-        return `<div class="list-row">
+        return `<div class="list-row" data-date="${key}" style="cursor:pointer;">
           <div><div class="name">${label}</div><div class="meta">${d.units} items · expenses ${fmt(d.expenses)} · net ${fmt(net)}</div></div>
           <span class="pill mono">${fmt(d.revenue)}</span>
         </div>`;
       }).join('');
+      document.querySelectorAll('#dailyRevenueList [data-date]').forEach(el=>{
+        el.addEventListener('click', ()=> openDayDetail(el.dataset.date));
+      });
     }
 
     const weekAgo = Date.now() - 7*24*60*60*1000;
@@ -933,6 +983,57 @@
       $('stallNameHeader').textContent = stallName;
       await saveStallName();
     }
+  });
+
+  // ---- Day detail sheet ----
+  function openDayDetail(dateStr){
+    const daySales = sales.filter(s => isoDateLocal(s.ts) === dateStr);
+    const dayExpenses = expenses.filter(e => isoDateLocal(e.ts) === dateStr);
+    const revenue = daySales.reduce((a,s)=>a+s.total,0);
+    const units = daySales.reduce((a,s)=>a+s.qty,0);
+    const grossProfit = daySales.reduce((a,s)=>a+profitOf(s),0);
+    const expensesTotal = dayExpenses.reduce((a,e)=>a+e.amount,0);
+    const net = grossProfit - expensesTotal;
+
+    const titleDate = new Date(dateStr + 'T12:00:00');
+    $('dayDetailTitle').textContent = titleDate.toLocaleDateString('en-LK', {weekday:'long', day:'2-digit', month:'long', year:'numeric'});
+    $('dayDetailRevenue').textContent = fmt(revenue);
+    $('dayDetailNet').textContent = fmt(net);
+    $('dayDetailUnits').textContent = units;
+    $('dayDetailExpenses').textContent = fmt(expensesTotal);
+
+    if(daySales.length===0){
+      $('dayDetailSalesList').innerHTML = '<div class="empty">No sales this day.</div>';
+    } else {
+      $('dayDetailSalesList').innerHTML = [...daySales].sort((a,b)=>b.ts-a.ts).map(s=>{
+        const prod = products.find(p=>p.id===s.productId);
+        const name = prod ? prod.name : (s.productName || 'Deleted product');
+        const time = new Date(s.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+        return `<div class="list-row">
+          <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}</div></div>
+          <span class="pill mono">${fmt(s.total)}</span>
+        </div>`;
+      }).join('');
+    }
+
+    if(dayExpenses.length===0){
+      $('dayDetailExpensesList').innerHTML = '<div class="empty">No expenses this day.</div>';
+    } else {
+      $('dayDetailExpensesList').innerHTML = [...dayExpenses].sort((a,b)=>b.ts-a.ts).map(e=>{
+        const time = new Date(e.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+        return `<div class="list-row">
+          <div><div class="name">${escapeHtml(e.note)}</div><div class="meta">${escapeHtml(e.category)} · ${time}</div></div>
+          <span class="pill mono">${fmt(e.amount)}</span>
+        </div>`;
+      }).join('');
+    }
+
+    $('dayDetailOverlay').classList.add('open');
+  }
+  $('closeDayDetailBtn').addEventListener('click', ()=> $('dayDetailOverlay').classList.remove('open'));
+  $('dayDetailOverlay').addEventListener('click', (e)=>{ if(e.target===$('dayDetailOverlay')) $('dayDetailOverlay').classList.remove('open'); });
+  $('dayPicker').addEventListener('change', ()=>{
+    if($('dayPicker').value) openDayDetail($('dayPicker').value);
   });
 
   // ---- Sync sheet ----

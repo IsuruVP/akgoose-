@@ -881,7 +881,7 @@
     $('qtyVal').textContent = sellQty;
     $('sellSheetTotal').textContent = fmt(sellQty * sellingProduct.price);
     const margin = (sellingProduct.price - (sellingProduct.cost||0)) * sellQty;
-    $('sellStockNote').textContent = sellingProduct.stock + ' in stock · profit ' + fmt(margin);
+    $('sellStockNote').textContent = sellingProduct.stock + ' in stock · bought ' + fmt(sellingProduct.cost || 0) + ' · profit ' + fmt(margin);
   }
   $('qtyMinus').addEventListener('click', ()=>{
     if(sellQty>1){ sellQty--; updateSellSheet(); }

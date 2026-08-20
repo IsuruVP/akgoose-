@@ -117,6 +117,7 @@
   .btn-primary{ background:var(--ink); color:var(--paper); }
   .btn-mustard{ background:var(--mustard); color:var(--ink); }
   .btn-outline{ background:none; border:1.5px solid var(--ink); color:var(--ink); }
+  .btn-outline.selected{ background:var(--ink); color:var(--paper); }
   .btn-block{ width:100%; }
   .btn-sm{ padding:6px 10px; font-size:12px; border-radius:6px; }
   .btn-danger-text{ background:none; border:none; color:var(--rust); font-size:12px; font-family:'Inter'; cursor:pointer; padding:4px; }
@@ -234,6 +235,10 @@
           <div class="label">Low stock</div>
           <div class="val" id="lowStockCount">0</div>
         </div>
+        <div class="stat-tile" id="creditTile">
+          <div class="label">Outstanding credit</div>
+          <div class="val" id="creditTotal">Rs 0</div>
+        </div>
       </div>
 
       <div class="card">
@@ -243,6 +248,11 @@
           <input type="date" id="dayPicker">
         </div>
         <div id="dailyRevenueList"><div class="empty">No sales recorded yet.</div></div>
+      </div>
+
+      <div class="card" id="creditCard" style="display:none;">
+        <h2>Owed to You (Credit / Loan)</h2>
+        <div id="creditList"></div>
       </div>
 
       <div class="card" id="lowStockCard" style="display:none;">
@@ -342,6 +352,17 @@
       <button id="qtyPlus">+</button>
     </div>
     <div style="font-size:12px; color:var(--ink-soft); text-align:center; margin-bottom:14px;" id="sellStockNote"></div>
+    <div class="field">
+      <label>Payment</label>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn btn-outline btn-block" id="payCashBtn" style="flex:1;">Cash</button>
+        <button type="button" class="btn btn-outline btn-block" id="payCreditBtn" style="flex:1;">Credit / Loan</button>
+      </div>
+    </div>
+    <div class="field" id="customerNameField" style="display:none;">
+      <label>Customer name</label>
+      <input type="text" id="customerNameInput" placeholder="Who's this for?">
+    </div>
     <button class="btn btn-primary btn-block" id="confirmSaleBtn">Record Sale</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelSaleBtn">Cancel</button>
   </div>
@@ -442,6 +463,26 @@
   </div>
 </div>
 
+<!-- Payment sheet -->
+<div class="overlay" id="paymentOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h3 id="paymentSheetTitle">Credit Sale</h3>
+    <div style="font-size:13px; color:var(--ink-soft); text-align:center; margin-bottom:14px;" id="paymentSheetInfo"></div>
+    <div class="field">
+      <label>Payment amount (Rs)</label>
+      <input type="number" id="paymentAmountInput" inputmode="decimal" placeholder="0">
+    </div>
+    <button class="btn btn-primary btn-block" id="addPaymentBtn">Add Payment</button>
+    <button class="btn btn-mustard btn-block" style="margin-top:8px;" id="payFullBtn">Pay Remaining in Full</button>
+    <div class="card" style="margin-top:14px;">
+      <h2>Payment History</h2>
+      <div id="paymentHistoryList"><div class="empty">No payments yet.</div></div>
+    </div>
+    <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelPaymentBtn">Close</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -453,6 +494,7 @@
   let editingProductId = null;
   let sellingProduct = null;
   let sellQty = 1;
+  let sellPaymentType = 'cash';
   let cloudEnabled = false;
   let currentDayDetailDate = null;
   let cloudStallId = null;
@@ -636,6 +678,13 @@
     return (sale.total) - (cost * sale.qty);
   }
 
+  function paidAmount(sale){
+    return (sale.payments || []).reduce((a,p)=>a+p.amount, 0);
+  }
+  function remainingAmount(sale){
+    return Math.max(0, sale.total - paidAmount(sale));
+  }
+
   async function loadAll(){
     try{
       const p = await storeGet('products');
@@ -736,6 +785,37 @@
     const weekUnits = sales.filter(s=>s.ts>=weekAgo).reduce((a,s)=>a+s.qty,0);
     $('weekUnits').textContent = weekUnits;
 
+    const unpaidCredit = sales.filter(s => s.paymentType==='credit' && !s.paid);
+    const creditTotal = unpaidCredit.reduce((a,s)=>a+remainingAmount(s),0);
+    $('creditTotal').textContent = fmt(creditTotal);
+    $('creditTile').classList.toggle('alert', unpaidCredit.length>0);
+    if(unpaidCredit.length>0){
+      $('creditCard').style.display = 'block';
+      $('creditList').innerHTML = [...unpaidCredit].sort((a,b)=>b.ts-a.ts).map(s=>{
+        const prod = products.find(p=>p.id===s.productId);
+        const name = prod ? prod.name : (s.productName || 'Deleted product');
+        const time = new Date(s.ts).toLocaleDateString('en-LK', {day:'2-digit', month:'short'});
+        const who = s.customerName ? escapeHtml(s.customerName) : 'Unnamed customer';
+        const paidSoFar = paidAmount(s);
+        const remaining = remainingAmount(s);
+        const meta = paidSoFar > 0
+          ? `${escapeHtml(name)} · ${time} · paid ${fmt(paidSoFar)} of ${fmt(s.total)}`
+          : `${escapeHtml(name)} · ${time}`;
+        return `<div class="list-row">
+          <div><div class="name">${who}</div><div class="meta">${meta}</div></div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pill low">${fmt(remaining)} left</span>
+            <button class="btn btn-outline btn-sm" data-open-payment="${s.id}">Add Payment</button>
+          </div>
+        </div>`;
+      }).join('');
+      document.querySelectorAll('#creditList [data-open-payment]').forEach(el=>{
+        el.addEventListener('click', ()=> openPaymentSheet(el.dataset.openPayment));
+      });
+    } else {
+      $('creditCard').style.display = 'none';
+    }
+
     const low = products.filter(p => p.stock <= (p.lowThreshold ?? 5));
     $('lowStockCount').textContent = low.length;
     $('lowStockTile').classList.toggle('alert', low.length>0);
@@ -758,9 +838,13 @@
         const prod = products.find(p=>p.id===s.productId);
         const name = prod ? prod.name : (s.productName || 'Deleted product');
         const time = new Date(s.ts).toLocaleString('en-LK', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'});
+        const creditBadge = s.paymentType==='credit'
+          ? `<span class="pill ${s.paid ? '' : 'low'}" style="margin-right:4px;">${s.paid ? 'Credit · Paid' : 'Credit · ' + fmt(remainingAmount(s)) + ' left'}</span>`
+          : '';
         return `<div class="list-row">
           <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}</div></div>
           <div style="display:flex; align-items:center; gap:8px;">
+            ${creditBadge}
             <span class="pill mono">${fmt(s.total)}</span>
             <button class="btn-danger-text" data-del-sale="${s.id}">✕</button>
           </div>
@@ -873,8 +957,11 @@
     sellingProduct = products.find(p=>p.id===id);
     if(!sellingProduct) return;
     sellQty = 1;
+    sellPaymentType = 'cash';
+    $('customerNameInput').value = '';
     $('sellSheetName').textContent = sellingProduct.name;
     updateSellSheet();
+    updatePaymentToggle();
     $('sellOverlay').classList.add('open');
   }
   function updateSellSheet(){
@@ -883,6 +970,13 @@
     const margin = (sellingProduct.price - (sellingProduct.cost||0)) * sellQty;
     $('sellStockNote').textContent = sellingProduct.stock + ' in stock · bought ' + fmt(sellingProduct.cost || 0) + ' · profit ' + fmt(margin);
   }
+  function updatePaymentToggle(){
+    $('payCashBtn').classList.toggle('selected', sellPaymentType==='cash');
+    $('payCreditBtn').classList.toggle('selected', sellPaymentType==='credit');
+    $('customerNameField').style.display = sellPaymentType==='credit' ? 'block' : 'none';
+  }
+  $('payCashBtn').addEventListener('click', ()=>{ sellPaymentType='cash'; updatePaymentToggle(); });
+  $('payCreditBtn').addEventListener('click', ()=>{ sellPaymentType='credit'; updatePaymentToggle(); });
   $('qtyMinus').addEventListener('click', ()=>{
     if(sellQty>1){ sellQty--; updateSellSheet(); }
   });
@@ -893,6 +987,7 @@
   $('cancelSaleBtn').addEventListener('click', ()=> $('sellOverlay').classList.remove('open'));
   $('confirmSaleBtn').addEventListener('click', async ()=>{
     if(!sellingProduct || sellingProduct.stock < sellQty){ showToast('Not enough stock'); return; }
+    const customerName = $('customerNameInput').value.trim();
     sellingProduct.stock -= sellQty;
     sales.push({
       id: 's'+Date.now(),
@@ -901,13 +996,17 @@
       qty: sellQty,
       total: sellQty * sellingProduct.price,
       cost: sellingProduct.cost || 0,
+      paymentType: sellPaymentType,
+      customerName: sellPaymentType==='credit' ? customerName : '',
+      paid: sellPaymentType==='cash',
+      payments: [],
       ts: Date.now()
     });
     await saveProducts();
     await saveSales();
     $('sellOverlay').classList.remove('open');
     render();
-    showToast('Sale recorded');
+    showToast(sellPaymentType==='credit' ? 'Credit sale recorded' : 'Sale recorded');
   });
 
   // ---- Product add/edit sheet ----
@@ -1017,14 +1116,25 @@
         const prod = products.find(p=>p.id===s.productId);
         const name = prod ? prod.name : (s.productName || 'Deleted product');
         const time = new Date(s.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+        const creditBadge = s.paymentType==='credit'
+          ? `<span class="pill ${s.paid ? '' : 'low'}" style="margin-right:4px;">${s.paid ? 'Paid' : fmt(remainingAmount(s)) + ' left'}</span>`
+          : '';
+        const payBtn = (s.paymentType==='credit' && !s.paid)
+          ? `<button class="btn btn-outline btn-sm" data-pay-detail="${s.id}">Pay</button>`
+          : '';
         return `<div class="list-row">
-          <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}</div></div>
+          <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}${s.paymentType==='credit' && s.customerName ? ' · ' + escapeHtml(s.customerName) : ''}</div></div>
           <div style="display:flex; align-items:center; gap:8px;">
+            ${creditBadge}
             <span class="pill mono">${fmt(s.total)}</span>
+            ${payBtn}
             <button class="btn-danger-text" data-del-sale-detail="${s.id}">✕</button>
           </div>
         </div>`;
       }).join('');
+      document.querySelectorAll('#dayDetailSalesList [data-pay-detail]').forEach(el=>{
+        el.addEventListener('click', ()=> openPaymentSheet(el.dataset.payDetail));
+      });
       document.querySelectorAll('#dayDetailSalesList [data-del-sale-detail]').forEach(el=>{
         el.addEventListener('click', ()=> deleteSale(el.dataset.delSaleDetail, true));
       });
@@ -1071,6 +1181,75 @@
     if(fromDayDetail && currentDayDetailDate) openDayDetail(currentDayDetailDate);
     showToast(prod ? 'Sale removed, stock restored' : 'Sale removed');
   }
+
+  let payingSaleId = null;
+
+  function openPaymentSheet(saleId){
+    payingSaleId = saleId;
+    renderPaymentSheet();
+    $('paymentAmountInput').value = '';
+    $('paymentOverlay').classList.add('open');
+  }
+
+  function renderPaymentSheet(){
+    const sale = sales.find(s=>s.id===payingSaleId);
+    if(!sale){ $('paymentOverlay').classList.remove('open'); return; }
+    const prod = products.find(p=>p.id===sale.productId);
+    const name = prod ? prod.name : (sale.productName || 'Deleted product');
+    const who = sale.customerName ? sale.customerName : 'Unnamed customer';
+    const paidSoFar = paidAmount(sale);
+    const remaining = remainingAmount(sale);
+    $('paymentSheetTitle').textContent = who + ' · ' + name;
+    $('paymentSheetInfo').textContent = 'Total ' + fmt(sale.total) + ' · Paid ' + fmt(paidSoFar) + ' · Remaining ' + fmt(remaining);
+    $('paymentAmountInput').max = remaining;
+
+    const history = sale.payments || [];
+    if(history.length===0){
+      $('paymentHistoryList').innerHTML = '<div class="empty">No payments yet.</div>';
+    } else {
+      $('paymentHistoryList').innerHTML = [...history].sort((a,b)=>b.ts-a.ts).map(p=>{
+        const time = new Date(p.ts).toLocaleString('en-LK', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'});
+        return `<div class="list-row">
+          <div><div class="name">Payment</div><div class="meta">${time}</div></div>
+          <span class="pill mono">${fmt(p.amount)}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  async function addPaymentToSale(amount){
+    const sale = sales.find(s=>s.id===payingSaleId);
+    if(!sale) return;
+    const remaining = remainingAmount(sale);
+    if(amount <= 0){ showToast('Enter an amount above 0'); return; }
+    if(amount > remaining) amount = remaining;
+    if(!sale.payments) sale.payments = [];
+    sale.payments.push({ amount, ts: Date.now() });
+    if(remainingAmount(sale) <= 0){ sale.paid = true; }
+    await saveSales();
+    render();
+    if(sale.paid){
+      $('paymentOverlay').classList.remove('open');
+      showToast('Paid in full');
+    } else {
+      renderPaymentSheet();
+      $('paymentAmountInput').value = '';
+      showToast('Payment recorded');
+    }
+  }
+
+  $('addPaymentBtn').addEventListener('click', ()=>{
+    const amount = parseFloat($('paymentAmountInput').value);
+    if(isNaN(amount) || amount<=0){ showToast('Enter a valid amount'); return; }
+    addPaymentToSale(amount);
+  });
+  $('payFullBtn').addEventListener('click', ()=>{
+    const sale = sales.find(s=>s.id===payingSaleId);
+    if(!sale) return;
+    addPaymentToSale(remainingAmount(sale));
+  });
+  $('cancelPaymentBtn').addEventListener('click', ()=> $('paymentOverlay').classList.remove('open'));
+  $('paymentOverlay').addEventListener('click', (e)=>{ if(e.target===$('paymentOverlay')) $('paymentOverlay').classList.remove('open'); });
 
   $('closeDayDetailBtn').addEventListener('click', ()=> $('dayDetailOverlay').classList.remove('open'));
   $('dayDetailOverlay').addEventListener('click', (e)=>{ if(e.target===$('dayDetailOverlay')) $('dayDetailOverlay').classList.remove('open'); });

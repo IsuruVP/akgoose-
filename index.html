@@ -422,7 +422,7 @@
       </div>
       <div class="field">
         <label>Low stock alert below</label>
-        <input type="number" id="pLowThreshold" inputmode="numeric" placeholder="5">
+        <input type="number" id="pLowThreshold" inputmode="numeric" placeholder="2">
       </div>
     </div>
     <button class="btn btn-primary btn-block" id="saveProductBtn">Save Product</button>
@@ -845,7 +845,7 @@
       $('creditCard').style.display = 'none';
     }
 
-    const low = products.filter(p => p.stock <= (p.lowThreshold ?? 5));
+    const low = products.filter(p => p.stock <= (p.lowThreshold ?? 2));
     $('lowStockCount').textContent = low.length;
     $('lowStockTile').classList.toggle('alert', low.length>0);
     if(low.length>0){
@@ -953,10 +953,10 @@
       <div class="list-row">
         <div>
           <div class="name">${escapeHtml(p.name)}</div>
-          <div class="meta">Sell ${fmt(p.price)} · Bought ${fmt(p.cost || 0)} · alert below ${p.lowThreshold ?? 5}</div>
+          <div class="meta">Sell ${fmt(p.price)} · Bought ${fmt(p.cost || 0)} · alert below ${p.lowThreshold ?? 2}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
-          <span class="pill ${p.stock <= (p.lowThreshold ?? 5) ? 'low' : ''}">${p.stock} left</span>
+          <span class="pill ${p.stock <= (p.lowThreshold ?? 2) ? 'low' : ''}">${p.stock} left</span>
           <button class="btn btn-outline btn-sm" data-edit="${p.id}">Edit</button>
         </div>
       </div>`).join('');
@@ -1066,7 +1066,7 @@
       $('pCost').value = p.cost || '';
       $('pPrice').value = p.price;
       $('pStock').value = p.stock;
-      $('pLowThreshold').value = p.lowThreshold ?? 5;
+      $('pLowThreshold').value = p.lowThreshold ?? 2;
       $('deleteProductBtn').style.display = 'block';
     } else {
       $('productSheetTitle').textContent = 'Add Product';
@@ -1074,7 +1074,7 @@
       $('pCost').value = '';
       $('pPrice').value = '';
       $('pStock').value = '';
-      $('pLowThreshold').value = 5;
+      $('pLowThreshold').value = 2;
       $('deleteProductBtn').style.display = 'none';
     }
     $('productOverlay').classList.add('open');
@@ -1085,7 +1085,7 @@
     const cost = parseFloat($('pCost').value) || 0;
     const price = parseFloat($('pPrice').value);
     const stock = parseInt($('pStock').value, 10);
-    const lowThreshold = parseInt($('pLowThreshold').value, 10) || 5;
+    const lowThreshold = parseInt($('pLowThreshold').value, 10) || 2;
     if(!name || isNaN(price) || price<0 || isNaN(stock) || stock<0){
       showToast('Fill in name, price and stock');
       return;

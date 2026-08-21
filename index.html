@@ -191,9 +191,36 @@
   .toast.show{ opacity:1; }
 
   a{ color: inherit; }
+
+  #loginScreen{
+    display:none;
+    position:fixed; inset:0; z-index:200;
+    background:var(--paper);
+    background-image: radial-gradient(circle at 1px 1px, rgba(28,43,34,0.06) 1px, transparent 0);
+    background-size: 14px 14px;
+    align-items:center; justify-content:center;
+    padding:20px;
+  }
+  #loginScreen input{
+    width:100%; padding:11px 12px; border:1.5px solid var(--line); border-radius:8px;
+    font-family:'Space Mono'; font-size:16px; background:#fff; color:var(--ink);
+  }
+  #loginScreen input:focus{ outline:2px solid var(--mustard); border-color:var(--mustard); }
 </style>
 </head>
 <body>
+
+<div id="loginScreen">
+  <div class="tag" style="max-width:340px; width:100%; text-align:left; padding:26px 24px 26px 42px; transform:none;">
+    <div class="hole"></div>
+    <div class="eyebrow">Stall Locked</div>
+    <h3 style="margin:8px 0 6px; font-size:19px;">Enter Stall Code</h3>
+    <p style="font-size:12px; color:var(--ink-soft); margin:0 0 16px; line-height:1.5;">This is the same code you use to sync devices. Keep it private, like a password.</p>
+    <input type="password" id="loginCodeInput" placeholder="Stall code" autocomplete="off">
+    <button class="btn btn-primary btn-block" id="loginUnlockBtn" style="margin-top:12px;">Unlock</button>
+    <div id="loginError" style="display:none; color:var(--rust); font-size:12px; margin-top:10px;">Incorrect code — try again.</div>
+  </div>
+</div>
 
 <div class="wrap">
   <div class="topbar">
@@ -205,6 +232,7 @@
     <div style="display:flex; flex-direction:column; gap:6px;">
       <button class="reset-btn" id="syncBtn">Sync</button>
       <button class="reset-btn" id="renameBtn">Rename</button>
+      <button class="reset-btn" id="lockBtn" style="display:none;">Lock</button>
     </div>
   </div>
 
@@ -531,6 +559,7 @@
       el.textContent = '● This device only';
       el.classList.remove('on');
     }
+    $('lockBtn').style.display = localStorage.getItem('cloudSyncConfig') ? 'inline-block' : 'none';
   }
 
   function logSync(msg){
@@ -1307,13 +1336,48 @@
   });
   $('syncOverlay').addEventListener('click', (e)=>{ if(e.target===$('syncOverlay')) $('syncOverlay').classList.remove('open'); });
 
+  // ---- Login gate ----
+  async function unlockApp(){
+    $('loginScreen').style.display = 'none';
+    $('appContent').style.display = 'block';
+    render();
+    await tryRestoreCloudConnection();
+  }
+
+  $('loginUnlockBtn').addEventListener('click', async ()=>{
+    const raw = localStorage.getItem('cloudSyncConfig');
+    let saved = null;
+    try{ saved = raw ? JSON.parse(raw) : null; }catch(e){ saved = null; }
+    const entered = $('loginCodeInput').value.trim();
+    if(saved && entered && entered === saved.stallId){
+      sessionStorage.setItem('stallUnlocked', 'true');
+      $('loginError').style.display = 'none';
+      $('loginCodeInput').value = '';
+      await unlockApp();
+    } else {
+      $('loginError').style.display = 'block';
+    }
+  });
+  $('loginCodeInput').addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter') $('loginUnlockBtn').click();
+  });
+  $('lockBtn').addEventListener('click', ()=>{
+    sessionStorage.removeItem('stallUnlocked');
+    location.reload();
+  });
+
   // ---- Init ----
   (async function init(){
     await loadAll();
     $('loadingState').style.display = 'none';
-    $('appContent').style.display = 'block';
-    render();
-    await tryRestoreCloudConnection();
+    const savedCloudRaw = localStorage.getItem('cloudSyncConfig');
+    const unlockedThisSession = sessionStorage.getItem('stallUnlocked') === 'true';
+    if(savedCloudRaw && !unlockedThisSession){
+      $('loginScreen').style.display = 'flex';
+      $('loginCodeInput').focus();
+    } else {
+      await unlockApp();
+    }
   })();
 })();
 </script>

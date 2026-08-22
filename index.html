@@ -219,6 +219,7 @@
     <input type="password" id="loginCodeInput" placeholder="Stall code" autocomplete="off">
     <button class="btn btn-primary btn-block" id="loginUnlockBtn" style="margin-top:12px;">Unlock</button>
     <div id="loginError" style="display:none; color:var(--rust); font-size:12px; margin-top:10px;">Incorrect code — try again.</div>
+    <button type="button" id="forgotCodeBtn" style="background:none; border:none; color:var(--ink-soft); font-size:12px; text-decoration:underline; cursor:pointer; margin-top:16px; padding:4px;">Forgot the code? Reset this device</button>
   </div>
 </div>
 
@@ -1360,6 +1361,13 @@
   });
   $('loginCodeInput').addEventListener('keydown', (e)=>{
     if(e.key === 'Enter') $('loginUnlockBtn').click();
+  });
+  $('forgotCodeBtn').addEventListener('click', ()=>{
+    const ok = confirm('This unlocks the app on this device without a password, and lets you reconnect to sync with the correct stall code. Your cloud data is not affected. Continue?');
+    if(!ok) return;
+    localStorage.removeItem('cloudSyncConfig');
+    sessionStorage.removeItem('stallUnlocked');
+    location.reload();
   });
   $('lockBtn').addEventListener('click', ()=>{
     sessionStorage.removeItem('stallUnlocked');

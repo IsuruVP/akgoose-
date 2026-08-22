@@ -260,10 +260,6 @@
           <div class="label">Sold this week</div>
           <div class="val" id="weekUnits">0</div>
         </div>
-        <div class="stat-tile" id="lowStockTile">
-          <div class="label">Low stock</div>
-          <div class="val" id="lowStockCount">0</div>
-        </div>
         <div class="stat-tile" id="creditTile">
           <div class="label">Outstanding credit</div>
           <div class="val" id="creditTotal">Rs 0</div>
@@ -282,11 +278,6 @@
       <div class="card" id="creditCard" style="display:none;">
         <h2>Owed to You (Credit / Loan)</h2>
         <div id="creditList"></div>
-      </div>
-
-      <div class="card" id="lowStockCard" style="display:none;">
-        <h2>Running Low</h2>
-        <div id="lowStockList"></div>
       </div>
 
       <div class="card">
@@ -416,15 +407,9 @@
         <input type="number" id="pPrice" inputmode="decimal" placeholder="0">
       </div>
     </div>
-    <div class="row2">
-      <div class="field">
-        <label>Stock qty</label>
-        <input type="number" id="pStock" inputmode="numeric" placeholder="0">
-      </div>
-      <div class="field">
-        <label>Low stock alert below</label>
-        <input type="number" id="pLowThreshold" inputmode="numeric" placeholder="2">
-      </div>
+    <div class="field">
+      <label>Stock qty</label>
+      <input type="number" id="pStock" inputmode="numeric" placeholder="0">
     </div>
     <button class="btn btn-primary btn-block" id="saveProductBtn">Save Product</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelProductBtn">Cancel</button>
@@ -846,20 +831,6 @@
       $('creditCard').style.display = 'none';
     }
 
-    const low = products.filter(p => p.stock <= (p.lowThreshold ?? 2));
-    $('lowStockCount').textContent = low.length;
-    $('lowStockTile').classList.toggle('alert', low.length>0);
-    if(low.length>0){
-      $('lowStockCard').style.display = 'block';
-      $('lowStockList').innerHTML = low.map(p=>`
-        <div class="list-row">
-          <div><div class="name">${escapeHtml(p.name)}</div><div class="meta">${fmt(p.price)} each</div></div>
-          <span class="pill low">${p.stock} left</span>
-        </div>`).join('');
-    } else {
-      $('lowStockCard').style.display = 'none';
-    }
-
     const recent = [...sales].sort((a,b)=>b.ts-a.ts).slice(0,8);
     if(recent.length===0){
       $('recentSalesList').innerHTML = '<div class="empty">No sales recorded yet.</div>';
@@ -954,10 +925,10 @@
       <div class="list-row">
         <div>
           <div class="name">${escapeHtml(p.name)}</div>
-          <div class="meta">Sell ${fmt(p.price)} · Bought ${fmt(p.cost || 0)} · alert below ${p.lowThreshold ?? 2}</div>
+          <div class="meta">Sell ${fmt(p.price)} · Bought ${fmt(p.cost || 0)}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
-          <span class="pill ${p.stock <= (p.lowThreshold ?? 2) ? 'low' : ''}">${p.stock} left</span>
+          <span class="pill">${p.stock} left</span>
           <button class="btn btn-outline btn-sm" data-edit="${p.id}">Edit</button>
         </div>
       </div>`).join('');
@@ -1067,7 +1038,6 @@
       $('pCost').value = p.cost || '';
       $('pPrice').value = p.price;
       $('pStock').value = p.stock;
-      $('pLowThreshold').value = p.lowThreshold ?? 2;
       $('deleteProductBtn').style.display = 'block';
     } else {
       $('productSheetTitle').textContent = 'Add Product';
@@ -1075,7 +1045,6 @@
       $('pCost').value = '';
       $('pPrice').value = '';
       $('pStock').value = '';
-      $('pLowThreshold').value = 2;
       $('deleteProductBtn').style.display = 'none';
     }
     $('productOverlay').classList.add('open');
@@ -1086,16 +1055,15 @@
     const cost = parseFloat($('pCost').value) || 0;
     const price = parseFloat($('pPrice').value);
     const stock = parseInt($('pStock').value, 10);
-    const lowThreshold = parseInt($('pLowThreshold').value, 10) || 2;
     if(!name || isNaN(price) || price<0 || isNaN(stock) || stock<0){
       showToast('Fill in name, price and stock');
       return;
     }
     if(editingProductId){
       const p = products.find(x=>x.id===editingProductId);
-      p.name = name; p.cost = cost; p.price = price; p.stock = stock; p.lowThreshold = lowThreshold;
+      p.name = name; p.cost = cost; p.price = price; p.stock = stock;
     } else {
-      products.push({ id:'p'+Date.now(), name, cost, price, stock, lowThreshold });
+      products.push({ id:'p'+Date.now(), name, cost, price, stock });
     }
     await saveProducts();
     $('productOverlay').classList.remove('open');

@@ -150,6 +150,7 @@
     display:none; align-items:flex-end; justify-content:center; z-index:50;
   }
   .overlay.open{ display:flex; }
+  #confirmOverlay{ z-index:250; }
   .sheet{
     background:var(--paper); width:100%; max-width:520px; border-radius:16px 16px 0 0;
     padding:20px 18px 24px; box-shadow:0 -4px 20px rgba(0,0,0,0.2);
@@ -507,6 +508,17 @@
   </div>
 </div>
 
+<!-- Confirm sheet -->
+<div class="overlay" id="confirmOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h3 id="confirmTitle">Are you sure?</h3>
+    <p id="confirmMessage" style="font-size:14px; color:var(--ink-soft); margin:0 0 18px; line-height:1.5;"></p>
+    <button class="btn btn-block" id="confirmYesBtn" style="background:var(--rust); color:#fff;">Yes, Continue</button>
+    <button class="btn btn-outline btn-block" style="margin-top:8px;" id="confirmNoBtn">Cancel</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -684,6 +696,29 @@
     t.classList.add('show');
     setTimeout(()=> t.classList.remove('show'), 1800);
   }
+
+  let pendingConfirmAction = null;
+  function showConfirm(message, action){
+    $('confirmMessage').textContent = message;
+    pendingConfirmAction = action;
+    $('confirmOverlay').classList.add('open');
+  }
+  $('confirmYesBtn').addEventListener('click', async ()=>{
+    $('confirmOverlay').classList.remove('open');
+    const action = pendingConfirmAction;
+    pendingConfirmAction = null;
+    if(action) await action();
+  });
+  $('confirmNoBtn').addEventListener('click', ()=>{
+    $('confirmOverlay').classList.remove('open');
+    pendingConfirmAction = null;
+  });
+  $('confirmOverlay').addEventListener('click', (e)=>{
+    if(e.target===$('confirmOverlay')){
+      $('confirmOverlay').classList.remove('open');
+      pendingConfirmAction = null;
+    }
+  });
 
   function todayKey(ts){
     return new Date(ts).toDateString();
@@ -920,11 +955,13 @@
         </div>`;
       }).join('');
       document.querySelectorAll('[data-del-expense]').forEach(el=>{
-        el.addEventListener('click', async ()=>{
-          expenses = expenses.filter(e=>e.id!==el.dataset.delExpense);
-          await saveExpenses();
-          render();
-          showToast('Expense removed');
+        el.addEventListener('click', ()=>{
+          showConfirm('Delete this expense?', async ()=>{
+            expenses = expenses.filter(e=>e.id!==el.dataset.delExpense);
+            await saveExpenses();
+            render();
+            showToast('Expense removed');
+          });
         });
       });
     }
@@ -1119,13 +1156,17 @@
     render();
     showToast('Product saved');
   });
-  $('deleteProductBtn').addEventListener('click', async ()=>{
+  $('deleteProductBtn').addEventListener('click', ()=>{
     if(!editingProductId) return;
-    products = products.filter(p=>p.id!==editingProductId);
-    await saveProducts();
-    $('productOverlay').classList.remove('open');
-    render();
-    showToast('Product deleted');
+    const p = products.find(x=>x.id===editingProductId);
+    const name = p ? p.name : 'this product';
+    showConfirm('Delete "' + name + '"? This cannot be undone.', async ()=>{
+      products = products.filter(x=>x.id!==editingProductId);
+      await saveProducts();
+      $('productOverlay').classList.remove('open');
+      render();
+      showToast('Product deleted');
+    });
   });
 
   // ---- Rename stall ----
@@ -1201,12 +1242,14 @@
         </div>`;
       }).join('');
       document.querySelectorAll('#dayDetailExpensesList [data-del-expense-detail]').forEach(el=>{
-        el.addEventListener('click', async ()=>{
-          expenses = expenses.filter(x=>x.id!==el.dataset.delExpenseDetail);
-          await saveExpenses();
-          render();
-          openDayDetail(currentDayDetailDate);
-          showToast('Expense removed');
+        el.addEventListener('click', ()=>{
+          showConfirm('Delete this expense?', async ()=>{
+            expenses = expenses.filter(x=>x.id!==el.dataset.delExpenseDetail);
+            await saveExpenses();
+            render();
+            openDayDetail(currentDayDetailDate);
+            showToast('Expense removed');
+          });
         });
       });
     }
@@ -1214,19 +1257,21 @@
     $('dayDetailOverlay').classList.add('open');
   }
 
-  async function deleteSale(saleId, fromDayDetail){
+  function deleteSale(saleId, fromDayDetail){
     const sale = sales.find(s=>s.id===saleId);
     if(!sale) return;
-    const prod = products.find(p=>p.id===sale.productId);
-    if(prod){
-      prod.stock += sale.qty;
-      await saveProducts();
-    }
-    sales = sales.filter(s=>s.id!==saleId);
-    await saveSales();
-    render();
-    if(fromDayDetail && currentDayDetailDate) openDayDetail(currentDayDetailDate);
-    showToast(prod ? 'Sale removed, stock restored' : 'Sale removed');
+    showConfirm('Delete this sale? Stock will be added back if the product still exists.', async ()=>{
+      const prod = products.find(p=>p.id===sale.productId);
+      if(prod){
+        prod.stock += sale.qty;
+        await saveProducts();
+      }
+      sales = sales.filter(s=>s.id!==saleId);
+      await saveSales();
+      render();
+      if(fromDayDetail && currentDayDetailDate) openDayDetail(currentDayDetailDate);
+      showToast(prod ? 'Sale removed, stock restored' : 'Sale removed');
+    });
   }
 
   let payingSaleId = null;
@@ -1380,11 +1425,11 @@
     if(e.key === 'Enter') $('loginUnlockBtn').click();
   });
   $('forgotCodeBtn').addEventListener('click', ()=>{
-    const ok = confirm('This unlocks the app on this device without a password, and lets you reconnect to sync with the correct stall code. Your cloud data is not affected. Continue?');
-    if(!ok) return;
-    localStorage.removeItem('cloudSyncConfig');
-    sessionStorage.removeItem('stallUnlocked');
-    location.reload();
+    showConfirm('This unlocks the app on this device without a password, and lets you reconnect to sync with the correct stall code. Your cloud data is not affected. Continue?', ()=>{
+      localStorage.removeItem('cloudSyncConfig');
+      sessionStorage.removeItem('stallUnlocked');
+      location.reload();
+    });
   });
   $('lockBtn').addEventListener('click', ()=>{
     sessionStorage.removeItem('stallUnlocked');

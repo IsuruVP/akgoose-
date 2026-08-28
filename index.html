@@ -245,12 +245,12 @@
     <div class="tab active" id="tab-dashboard">
       <div class="tag hero">
         <div class="hole"></div>
-        <div class="eyebrow">Today's Take</div>
+        <div class="eyebrow">Today's Cash Take</div>
         <div class="figure mono" id="todayRevenue">Rs 0</div>
         <div class="sub" id="todaySub">0 items sold today</div>
         <div class="hero-stats">
           <div>Today's expenses <strong class="mono" id="todayExpenses">Rs 0</strong></div>
-          <div>Today's net profit <strong class="mono" id="todayNetProfit">Rs 0</strong></div>
+          <div>Today's net profit (cash) <strong class="mono" id="todayNetProfit">Rs 0</strong></div>
           <div>Stock value <strong class="mono" id="stockValue">Rs 0</strong></div>
         </div>
       </div>
@@ -264,6 +264,15 @@
           <div class="label">Outstanding credit</div>
           <div class="val" id="creditTotal">Rs 0</div>
         </div>
+        <div class="stat-tile">
+          <div class="label">Today's credit sales</div>
+          <div class="val" id="todayCreditTotal">Rs 0</div>
+        </div>
+      </div>
+
+      <div class="card" id="todayCreditCard" style="display:none;">
+        <h2>Today's Credit Sales (Separate from Cash Profit)</h2>
+        <div id="todayCreditList"></div>
       </div>
 
       <div class="card">
@@ -752,19 +761,44 @@
   function renderDashboard(){
     const today = new Date().toDateString();
     const todaySales = sales.filter(s => todayKey(s.ts) === today);
+    const todayCashSales = todaySales.filter(s => s.paymentType !== 'credit');
+    const todayCreditSales = todaySales.filter(s => s.paymentType === 'credit');
     const todayExpensesList = expenses.filter(e => todayKey(e.ts) === today);
-    const todayRevenue = todaySales.reduce((a,s)=>a+s.total,0);
+    const todayRevenue = todayCashSales.reduce((a,s)=>a+s.total,0);
     const todayUnits = todaySales.reduce((a,s)=>a+s.qty,0);
-    const todayGrossProfit = todaySales.reduce((a,s)=>a+profitOf(s),0);
+    const todayGrossProfit = todayCashSales.reduce((a,s)=>a+profitOf(s),0);
     const todayExpensesTotal = todayExpensesList.reduce((a,e)=>a+e.amount,0);
     const todayNetProfit = todayGrossProfit - todayExpensesTotal;
+    const todayCreditTotal = todayCreditSales.reduce((a,s)=>a+s.total,0);
     $('todayRevenue').textContent = fmt(todayRevenue);
     $('todaySub').textContent = todayUnits + (todayUnits===1 ? ' item sold today' : ' items sold today');
     $('todayExpenses').textContent = fmt(todayExpensesTotal);
     $('todayNetProfit').textContent = fmt(todayNetProfit);
+    $('todayCreditTotal').textContent = fmt(todayCreditTotal);
 
     const stockValue = products.reduce((a,p)=>a+(p.price*p.stock),0);
     $('stockValue').textContent = fmt(stockValue);
+
+    if(todayCreditSales.length>0){
+      $('todayCreditCard').style.display = 'block';
+      $('todayCreditList').innerHTML = [...todayCreditSales].sort((a,b)=>b.ts-a.ts).map(s=>{
+        const prod = products.find(p=>p.id===s.productId);
+        const name = prod ? prod.name : (s.productName || 'Deleted product');
+        const time = new Date(s.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+        const who = s.customerName ? escapeHtml(s.customerName) : 'Unnamed customer';
+        const remaining = remainingAmount(s);
+        const badge = s.paid ? `<span class="pill">Paid</span>` : `<span class="pill low">${fmt(remaining)} left</span>`;
+        return `<div class="list-row">
+          <div><div class="name">${who}</div><div class="meta">${escapeHtml(name)} · ${time}</div></div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pill mono">${fmt(s.total)}</span>
+            ${badge}
+          </div>
+        </div>`;
+      }).join('');
+    } else {
+      $('todayCreditCard').style.display = 'none';
+    }
 
     // Day by day revenue breakdown (most recent 14 days that have sales or expenses)
     if(sales.length===0 && expenses.length===0){
@@ -773,23 +807,28 @@
       const byDay = {};
       sales.forEach(s=>{
         const key = isoDateLocal(s.ts);
-        if(!byDay[key]) byDay[key] = { ts:s.ts, revenue:0, profit:0, units:0, expenses:0 };
-        byDay[key].revenue += s.total;
-        byDay[key].profit += profitOf(s);
+        if(!byDay[key]) byDay[key] = { ts:s.ts, cashRevenue:0, cashProfit:0, creditRevenue:0, units:0, expenses:0 };
+        if(s.paymentType === 'credit'){
+          byDay[key].creditRevenue += s.total;
+        } else {
+          byDay[key].cashRevenue += s.total;
+          byDay[key].cashProfit += profitOf(s);
+        }
         byDay[key].units += s.qty;
       });
       expenses.forEach(e=>{
         const key = isoDateLocal(e.ts);
-        if(!byDay[key]) byDay[key] = { ts:e.ts, revenue:0, profit:0, units:0, expenses:0 };
+        if(!byDay[key]) byDay[key] = { ts:e.ts, cashRevenue:0, cashProfit:0, creditRevenue:0, units:0, expenses:0 };
         byDay[key].expenses += e.amount;
       });
       const dayEntries = Object.entries(byDay).sort((a,b)=>b[1].ts-a[1].ts).slice(0,14);
       $('dailyRevenueList').innerHTML = dayEntries.map(([key,d])=>{
         const label = new Date(d.ts).toLocaleDateString('en-LK', {weekday:'short', day:'2-digit', month:'short'});
-        const net = d.profit - d.expenses;
+        const net = d.cashProfit - d.expenses;
+        const creditNote = d.creditRevenue > 0 ? ` · credit ${fmt(d.creditRevenue)}` : '';
         return `<div class="list-row" data-date="${key}" style="cursor:pointer;">
-          <div><div class="name">${label}</div><div class="meta">${d.units} items · expenses ${fmt(d.expenses)} · net ${fmt(net)}</div></div>
-          <span class="pill mono">${fmt(d.revenue)}</span>
+          <div><div class="name">${label}</div><div class="meta">${d.units} items · expenses ${fmt(d.expenses)} · net ${fmt(net)}${creditNote}</div></div>
+          <span class="pill mono">${fmt(d.cashRevenue)}</span>
         </div>`;
       }).join('');
       document.querySelectorAll('#dailyRevenueList [data-date]').forEach(el=>{

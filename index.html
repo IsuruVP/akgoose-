@@ -246,14 +246,19 @@
     <div class="tab active" id="tab-dashboard">
       <div class="tag hero">
         <div class="hole"></div>
-        <div class="eyebrow">Today's Cash Take</div>
-        <div class="figure mono" id="todayRevenue">Rs 0</div>
+        <div class="eyebrow">Today's Cash Take (All Stalls)</div>
+        <div class="figure mono" id="todayRevenue" style="font-size:48px;">Rs 0</div>
         <div class="sub" id="todaySub">0 items sold today</div>
         <div class="hero-stats">
           <div>Today's expenses <strong class="mono" id="todayExpenses">Rs 0</strong></div>
           <div>Today's net profit (cash) <strong class="mono" id="todayNetProfit">Rs 0</strong></div>
           <div>Stock value <strong class="mono" id="stockValue">Rs 0</strong></div>
         </div>
+      </div>
+
+      <div class="card" id="stallPointCard" style="display:none;">
+        <h2>Cash Take by Stall Point (Today)</h2>
+        <div id="stallPointList"></div>
       </div>
 
       <div class="stat-grid">
@@ -394,6 +399,14 @@
       <label>Customer name</label>
       <input type="text" id="customerNameInput" placeholder="Who's this for?">
     </div>
+    <div class="field">
+      <label>Stall Point (defaults to A)</label>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn btn-outline btn-block" id="pointABtn" style="flex:1;">A</button>
+        <button type="button" class="btn btn-outline btn-block" id="pointBBtn" style="flex:1;">B</button>
+        <button type="button" class="btn btn-outline btn-block" id="pointCBtn" style="flex:1;">C</button>
+      </div>
+    </div>
     <button class="btn btn-primary btn-block" id="confirmSaleBtn">Record Sale</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelSaleBtn">Cancel</button>
   </div>
@@ -531,6 +544,7 @@
   let sellingProduct = null;
   let sellQty = 1;
   let sellPaymentType = 'cash';
+  let sellStallPoint = 'A';
   let cloudEnabled = false;
   let currentDayDetailDate = null;
   let cloudStallId = null;
@@ -814,6 +828,27 @@
     const stockValue = products.reduce((a,p)=>a+(p.price*p.stock),0);
     $('stockValue').textContent = fmt(stockValue);
 
+    // Cash take by stall point (A/B/C) — today only
+    const stallPoints = {};
+    todayCashSales.forEach(s=>{
+      const point = s.stallPoint || 'Unassigned';
+      if(!stallPoints[point]) stallPoints[point] = { revenue:0, units:0 };
+      stallPoints[point].revenue += s.total;
+      stallPoints[point].units += s.qty;
+    });
+    const stallEntries = Object.entries(stallPoints).sort((a,b)=> a[0].localeCompare(b[0]));
+    if(stallEntries.length>0){
+      $('stallPointCard').style.display = 'block';
+      $('stallPointList').innerHTML = stallEntries.map(([point, d])=>{
+        return `<div class="list-row">
+          <div><div class="name">Stall ${escapeHtml(point)}</div><div class="meta">${d.units} items sold</div></div>
+          <span class="pill mono">${fmt(d.revenue)}</span>
+        </div>`;
+      }).join('');
+    } else {
+      $('stallPointCard').style.display = 'none';
+    }
+
     if(todayCreditSales.length>0){
       $('todayCreditCard').style.display = 'block';
       $('todayCreditList').innerHTML = [...todayCreditSales].sort((a,b)=>b.ts-a.ts).map(s=>{
@@ -914,11 +949,12 @@
         const prod = products.find(p=>p.id===s.productId);
         const name = prod ? prod.name : (s.productName || 'Deleted product');
         const time = new Date(s.ts).toLocaleString('en-LK', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'});
+        const stallNote = s.stallPoint ? ' · Stall ' + escapeHtml(s.stallPoint) : '';
         const creditBadge = s.paymentType==='credit'
           ? `<span class="pill ${s.paid ? '' : 'low'}" style="margin-right:4px;">${s.paid ? 'Credit · Paid' : 'Credit · ' + fmt(remainingAmount(s)) + ' left'}</span>`
           : '';
         return `<div class="list-row">
-          <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}</div></div>
+          <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}${stallNote}</div></div>
           <div style="display:flex; align-items:center; gap:8px;">
             ${creditBadge}
             <span class="pill mono">${fmt(s.total)}</span>
@@ -1044,10 +1080,12 @@
     if(!sellingProduct) return;
     sellQty = 1;
     sellPaymentType = 'cash';
+    sellStallPoint = 'A';
     $('customerNameInput').value = '';
     $('sellSheetName').textContent = sellingProduct.name;
     updateSellSheet();
     updatePaymentToggle();
+    updatePointToggle();
     $('sellOverlay').classList.add('open');
   }
   function updateSellSheet(){
@@ -1061,8 +1099,16 @@
     $('payCreditBtn').classList.toggle('selected', sellPaymentType==='credit');
     $('customerNameField').style.display = sellPaymentType==='credit' ? 'block' : 'none';
   }
+  function updatePointToggle(){
+    $('pointABtn').classList.toggle('selected', sellStallPoint==='A');
+    $('pointBBtn').classList.toggle('selected', sellStallPoint==='B');
+    $('pointCBtn').classList.toggle('selected', sellStallPoint==='C');
+  }
   $('payCashBtn').addEventListener('click', ()=>{ sellPaymentType='cash'; updatePaymentToggle(); });
   $('payCreditBtn').addEventListener('click', ()=>{ sellPaymentType='credit'; updatePaymentToggle(); });
+  $('pointABtn').addEventListener('click', ()=>{ sellStallPoint='A'; updatePointToggle(); });
+  $('pointBBtn').addEventListener('click', ()=>{ sellStallPoint='B'; updatePointToggle(); });
+  $('pointCBtn').addEventListener('click', ()=>{ sellStallPoint='C'; updatePointToggle(); });
   $('qtyMinus').addEventListener('click', ()=>{
     if(sellQty>1){ sellQty--; updateSellSheet(); }
   });
@@ -1086,6 +1132,7 @@
       customerName: sellPaymentType==='credit' ? customerName : '',
       paid: sellPaymentType==='cash',
       payments: [],
+      stallPoint: sellStallPoint,
       ts: Date.now()
     });
     await saveProducts();
@@ -1211,7 +1258,7 @@
           ? `<button class="btn btn-outline btn-sm" data-pay-detail="${s.id}">Pay</button>`
           : '';
         return `<div class="list-row">
-          <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}${s.paymentType==='credit' && s.customerName ? ' · ' + escapeHtml(s.customerName) : ''}</div></div>
+          <div><div class="name">${escapeHtml(name)}</div><div class="meta">${time} · qty ${s.qty}${s.stallPoint ? ' · Stall ' + escapeHtml(s.stallPoint) : ''}${s.paymentType==='credit' && s.customerName ? ' · ' + escapeHtml(s.customerName) : ''}</div></div>
           <div style="display:flex; align-items:center; gap:8px;">
             ${creditBadge}
             <span class="pill mono">${fmt(s.total)}</span>

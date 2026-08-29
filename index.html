@@ -290,6 +290,12 @@
         <div id="dailyRevenueList"><div class="empty">No sales recorded yet.</div></div>
       </div>
 
+      <div class="card">
+        <h2>Monthly Revenue &amp; Profit (Cash)</h2>
+        <div id="monthlyChart" style="margin-bottom:14px;"></div>
+        <div id="monthlyList"><div class="empty">No sales recorded yet.</div></div>
+      </div>
+
       <div class="card" id="creditCard" style="display:none;">
         <h2>Owed to You (Credit / Loan)</h2>
         <div id="creditList"></div>
@@ -762,6 +768,13 @@
     return `${y}-${m}-${day}`;
   }
 
+  function isoMonthLocal(ts){
+    const d = new Date(ts);
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    return `${y}-${m}`;
+  }
+
   function profitOf(sale){
     // uses cost snapshot stored on the sale; falls back to current product cost
     const cost = (sale.cost !== undefined) ? sale.cost : (products.find(p=>p.id===sale.productId)?.cost || 0);
@@ -821,6 +834,76 @@
     renderSell();
     renderStock();
     renderExpenses();
+    renderMonthly();
+  }
+
+  function renderMonthly(){
+    if(sales.length===0 && expenses.length===0){
+      $('monthlyChart').innerHTML = '';
+      $('monthlyList').innerHTML = '<div class="empty">No sales recorded yet.</div>';
+      return;
+    }
+    const byMonth = {};
+    sales.forEach(s=>{
+      const key = isoMonthLocal(s.ts);
+      if(!byMonth[key]) byMonth[key] = { ts:s.ts, cashRevenue:0, cashProfit:0, creditRevenue:0, creditProfit:0, expenses:0, units:0 };
+      if(s.paymentType === 'credit'){
+        byMonth[key].creditRevenue += s.total;
+        byMonth[key].creditProfit += profitOf(s);
+      } else {
+        byMonth[key].cashRevenue += s.total;
+        byMonth[key].cashProfit += profitOf(s);
+      }
+      byMonth[key].units += s.qty;
+    });
+    expenses.forEach(e=>{
+      const key = isoMonthLocal(e.ts);
+      if(!byMonth[key]) byMonth[key] = { ts:e.ts, cashRevenue:0, cashProfit:0, creditRevenue:0, creditProfit:0, expenses:0, units:0 };
+      byMonth[key].expenses += e.amount;
+    });
+
+    const allMonths = Object.entries(byMonth).sort((a,b)=>b[1].ts-a[1].ts);
+    const recentMonths = allMonths.slice(0, 12);
+
+    // List (most recent first)
+    $('monthlyList').innerHTML = recentMonths.map(([key,m])=>{
+      const label = new Date(key + '-01T12:00:00').toLocaleDateString('en-LK', {month:'long', year:'numeric'});
+      const net = m.cashProfit - m.expenses;
+      const creditNote = m.creditRevenue > 0 ? ` · credit ${fmt(m.creditRevenue)}` : '';
+      return `<div class="list-row">
+        <div><div class="name">${label}</div><div class="meta">${m.units} items · expenses ${fmt(m.expenses)} · net profit ${fmt(net)}${creditNote}</div></div>
+        <span class="pill mono">${fmt(m.cashRevenue)}</span>
+      </div>`;
+    }).join('');
+
+    // Chart (chronological, last 6 months, net cash profit per month)
+    const chartMonths = [...allMonths].slice(0, 6).reverse();
+    if(chartMonths.length===0){
+      $('monthlyChart').innerHTML = '';
+      return;
+    }
+    const values = chartMonths.map(([,m]) => m.cashProfit - m.expenses);
+    const maxAbs = Math.max(1, ...values.map(v=>Math.abs(v)));
+    const bars = chartMonths.map(([key,m], i)=>{
+      const net = values[i];
+      const heightPct = Math.max(4, (Math.abs(net) / maxAbs) * 100);
+      const color = net >= 0 ? 'var(--sage)' : 'var(--rust)';
+      const monthLabel = new Date(key + '-01T12:00:00').toLocaleDateString('en-LK', {month:'short'});
+      const valueLabel = (net/1000).toFixed(net % 1000 === 0 ? 0 : 1) + 'k';
+      return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;">
+        <div class="mono" style="font-size:10px; color:var(--ink-soft); margin-bottom:4px; white-space:nowrap;">${valueLabel}</div>
+        <div style="width:100%; max-width:36px; background:${color}; border-radius:4px 4px 0 0; height:${heightPct}%;"></div>
+      </div>`;
+    }).join('');
+    const labels = chartMonths.map(([key])=>{
+      const monthLabel = new Date(key + '-01T12:00:00').toLocaleDateString('en-LK', {month:'short'});
+      return `<div style="flex:1; text-align:center; font-size:10px; color:var(--ink-soft);">${monthLabel}</div>`;
+    }).join('');
+    $('monthlyChart').innerHTML = `
+      <div style="font-size:11px; color:var(--ink-soft); margin-bottom:6px;">Net cash profit, last ${chartMonths.length} months</div>
+      <div style="display:flex; align-items:flex-end; gap:8px; height:110px; padding-top:6px; border-bottom:1.5px solid var(--line);">${bars}</div>
+      <div style="display:flex; gap:8px; padding-top:6px;">${labels}</div>
+    `;
   }
 
   function renderDashboard(){

@@ -102,6 +102,19 @@
   .list-row:last-child{ border-bottom:none; }
   .list-row .name{ font-weight:600; }
   .list-row .meta{ font-size:12px; color:var(--ink-soft); }
+  .acct-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:7px 0; font-size:13.5px;
+  }
+  .acct-row .label{ color:var(--ink-soft); }
+  .acct-row .amt{ font-family:'Space Mono'; }
+  .acct-row.total{
+    border-top:1.5px solid var(--line); margin-top:4px; padding-top:9px;
+    font-weight:700; font-size:14.5px;
+  }
+  .acct-row.total .label{ color:var(--ink); }
+  .acct-row.neg .amt{ color:var(--rust); }
+  .acct-row.pos .amt{ color:var(--sage); }
   .pill{
     font-family:'Space Mono'; font-size:12px; padding:3px 8px; border-radius:20px;
     background:rgba(92,122,94,0.15); color:var(--sage);
@@ -370,6 +383,53 @@
         <h2>Recent Expenses</h2>
         <div id="expensesList"><div class="empty">No expenses recorded yet.</div></div>
       </div>
+
+      <div class="card">
+        <h2>Stock Bought on Credit (Supplier Bills)</h2>
+        <div class="field">
+          <label>Supplier name</label>
+          <input type="text" id="payableSupplier" placeholder="e.g. ABC Distributors">
+        </div>
+        <div class="field">
+          <label>What was purchased</label>
+          <input type="text" id="payableNote" placeholder="e.g. 50 bars of soap, restock">
+        </div>
+        <div class="field">
+          <label>Amount owed (Rs)</label>
+          <input type="number" id="payableAmount" inputmode="decimal" placeholder="0">
+        </div>
+        <button class="btn btn-primary btn-block" id="addPayableBtn">Add Supplier Bill</button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-tile" id="payableTile">
+          <div class="label">Owed to suppliers</div>
+          <div class="val" id="payableTotal">Rs 0</div>
+        </div>
+      </div>
+
+      <div class="card" id="payableCard" style="display:none;">
+        <h2>Outstanding Supplier Bills</h2>
+        <div id="payableList"></div>
+      </div>
+
+      <div class="card">
+        <h2>Accounts</h2>
+        <div style="display:flex; gap:8px; margin-bottom:14px;">
+          <button type="button" class="btn btn-outline btn-sm" data-period="week" style="flex:1;">This Week</button>
+          <button type="button" class="btn btn-outline btn-sm" data-period="month" style="flex:1;">This Month</button>
+          <button type="button" class="btn btn-outline btn-sm" data-period="all" style="flex:1;">All Time</button>
+        </div>
+
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--ink-soft); margin-bottom:8px;">1. Profit &amp; Loss</div>
+        <div id="plList" style="margin-bottom:18px;"></div>
+
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--ink-soft); margin-bottom:8px;">2. Balance Sheet <span style="text-transform:none; letter-spacing:0;">(as of today)</span></div>
+        <div id="bsList" style="margin-bottom:18px;"></div>
+
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--ink-soft); margin-bottom:8px;">3. Cash Flow</div>
+        <div id="cfList"></div>
+      </div>
     </div>
 
   </div>
@@ -543,6 +603,26 @@
   </div>
 </div>
 
+<!-- Supplier payment sheet -->
+<div class="overlay" id="supplierPaymentOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h3 id="supplierPaymentTitle">Supplier Bill</h3>
+    <div style="font-size:13px; color:var(--ink-soft); text-align:center; margin-bottom:14px;" id="supplierPaymentInfo"></div>
+    <div class="field">
+      <label>Payment amount (Rs)</label>
+      <input type="number" id="supplierPaymentAmountInput" inputmode="decimal" placeholder="0">
+    </div>
+    <button class="btn btn-primary btn-block" id="addSupplierPaymentBtn">Add Payment</button>
+    <button class="btn btn-mustard btn-block" style="margin-top:8px;" id="supplierPayFullBtn">Pay Remaining in Full</button>
+    <div class="card" style="margin-top:14px;">
+      <h2>Payment History</h2>
+      <div id="supplierPaymentHistoryList"><div class="empty">No payments yet.</div></div>
+    </div>
+    <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelSupplierPaymentBtn">Close</button>
+  </div>
+</div>
+
 <!-- Confirm sheet -->
 <div class="overlay" id="confirmOverlay">
   <div class="sheet">
@@ -561,6 +641,7 @@
   let products = [];
   let sales = [];
   let expenses = [];
+  let payables = [];
   let stallName = "My Stall";
   let editingProductId = null;
   let sellingProduct = null;
@@ -569,6 +650,7 @@
   let sellStallPoint = 'A';
   let cloudEnabled = false;
   let currentDayDetailDate = null;
+  let accountsPeriod = 'month';
   let cloudStallId = null;
   let cloudUnsub = null;
   let applyingRemoteUpdate = false;
@@ -631,11 +713,13 @@
         products = data.products || [];
         sales = data.sales || [];
         expenses = data.expenses || [];
+        payables = data.payables || [];
         stallName = data.stallName || stallName;
         $('stallNameHeader').textContent = stallName;
         await storeSet('products', JSON.stringify(products));
         await storeSet('sales', JSON.stringify(sales));
         await storeSet('expenses', JSON.stringify(expenses));
+        await storeSet('payables', JSON.stringify(payables));
         await storeSet('stallName', JSON.stringify(stallName));
         applyingRemoteUpdate = false;
         render();
@@ -680,11 +764,13 @@
         products = data.products || [];
         sales = data.sales || [];
         expenses = data.expenses || [];
+        payables = data.payables || [];
         stallName = data.stallName || stallName;
         $('stallNameHeader').textContent = stallName;
         await storeSet('products', JSON.stringify(products));
         await storeSet('sales', JSON.stringify(sales));
         await storeSet('expenses', JSON.stringify(expenses));
+        await storeSet('payables', JSON.stringify(payables));
         await storeSet('stallName', JSON.stringify(stallName));
         applyingRemoteUpdate = false;
         render();
@@ -703,7 +789,7 @@
     if(!cloudEnabled || applyingRemoteUpdate) return;
     try{
       await window.__stallDb.collection('stalls').doc(cloudStallId).set({
-        products, sales, expenses, stallName, updatedAt: Date.now()
+        products, sales, expenses, payables, stallName, updatedAt: Date.now()
       });
       logSync('Pushed local changes to cloud.');
     }catch(e){
@@ -787,6 +873,12 @@
   function remainingAmount(sale){
     return Math.max(0, sale.total - paidAmount(sale));
   }
+  function payablePaidAmount(bill){
+    return (bill.payments || []).reduce((a,p)=>a+p.amount, 0);
+  }
+  function payableRemaining(bill){
+    return Math.max(0, bill.amount - payablePaidAmount(bill));
+  }
 
   async function loadAll(){
     try{
@@ -801,6 +893,10 @@
       const ex = await storeGet('expenses');
       expenses = ex ? JSON.parse(ex.value) : [];
     }catch(e){ expenses = []; }
+    try{
+      const pay = await storeGet('payables');
+      payables = pay ? JSON.parse(pay.value) : [];
+    }catch(e){ payables = []; }
     try{
       const n = await storeGet('stallName');
       stallName = n ? JSON.parse(n.value) : "My Stall";
@@ -823,6 +919,11 @@
     catch(e){ showToast('Could not save. Try again.'); }
     pushCloud();
   }
+  async function savePayables(){
+    try{ await storeSet('payables', JSON.stringify(payables)); }
+    catch(e){ showToast('Could not save. Try again.'); }
+    pushCloud();
+  }
   async function saveStallName(){
     try{ await storeSet('stallName', JSON.stringify(stallName)); }
     catch(e){ showToast('Could not save name.'); }
@@ -834,7 +935,153 @@
     renderSell();
     renderStock();
     renderExpenses();
+    renderPayables();
     renderMonthly();
+    renderAccounts();
+  }
+
+  function renderPayables(){
+    const unpaid = payables.filter(b => !b.paid);
+    const total = unpaid.reduce((a,b)=>a+payableRemaining(b), 0);
+    $('payableTotal').textContent = fmt(total);
+    $('payableTile').classList.toggle('alert', unpaid.length>0);
+    if(unpaid.length>0){
+      $('payableCard').style.display = 'block';
+      $('payableList').innerHTML = [...unpaid].sort((a,b)=>b.ts-a.ts).map(bill=>{
+        const time = new Date(bill.ts).toLocaleDateString('en-LK', {day:'2-digit', month:'short'});
+        const paidSoFar = payablePaidAmount(bill);
+        const remaining = payableRemaining(bill);
+        const meta = paidSoFar > 0
+          ? `${escapeHtml(bill.note)} · ${time} · paid ${fmt(paidSoFar)} of ${fmt(bill.amount)}`
+          : `${escapeHtml(bill.note)} · ${time}`;
+        return `<div class="list-row">
+          <div><div class="name">${escapeHtml(bill.supplierName)}</div><div class="meta">${meta}</div></div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pill low">${fmt(remaining)} left</span>
+            <button class="btn btn-outline btn-sm" data-open-supplier-payment="${bill.id}">Add Payment</button>
+            <button class="btn-danger-text" data-del-payable="${bill.id}">✕</button>
+          </div>
+        </div>`;
+      }).join('');
+      document.querySelectorAll('#payableList [data-open-supplier-payment]').forEach(el=>{
+        el.addEventListener('click', ()=> openSupplierPaymentSheet(el.dataset.openSupplierPayment));
+      });
+      document.querySelectorAll('#payableList [data-del-payable]').forEach(el=>{
+        el.addEventListener('click', ()=>{
+          showConfirm('Delete this supplier bill?', async ()=>{
+            payables = payables.filter(b=>b.id!==el.dataset.delPayable);
+            await savePayables();
+            render();
+            showToast('Supplier bill removed');
+          });
+        });
+      });
+    } else {
+      $('payableCard').style.display = 'none';
+    }
+  }
+
+  function periodStartTs(period){
+    const now = new Date();
+    if(period === 'week') return Date.now() - 7*24*60*60*1000;
+    if(period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    return 0;
+  }
+
+  function acctRow(label, amount, opts){
+    opts = opts || {};
+    const cls = 'acct-row' + (opts.total ? ' total' : '') + (opts.neg ? ' neg' : '') + (opts.pos ? ' pos' : '');
+    return `<div class="${cls}"><span class="label">${label}</span><span class="amt">${fmt(amount)}</span></div>`;
+  }
+
+  function renderAccounts(){
+    document.querySelectorAll('[data-period]').forEach(btn=>{
+      btn.classList.toggle('selected', btn.dataset.period === accountsPeriod);
+    });
+    const start = periodStartTs(accountsPeriod);
+    const periodSales = sales.filter(s => s.ts >= start);
+    const periodExpenses = expenses.filter(e => e.ts >= start);
+
+    // ---- 1. Profit & Loss (accrual: all sales count as revenue when made) ----
+    const cashSalesRev = periodSales.filter(s=>s.paymentType!=='credit').reduce((a,s)=>a+s.total,0);
+    const creditSalesRev = periodSales.filter(s=>s.paymentType==='credit').reduce((a,s)=>a+s.total,0);
+    const totalRevenue = cashSalesRev + creditSalesRev;
+    const cogs = periodSales.reduce((a,s)=>a + (s.cost||0)*s.qty, 0);
+    const grossProfit = totalRevenue - cogs;
+    const opEx = periodExpenses.reduce((a,e)=>a+e.amount,0);
+    const netProfit = grossProfit - opEx;
+
+    $('plList').innerHTML =
+      acctRow('Cash sales revenue', cashSalesRev) +
+      acctRow('Credit sales revenue', creditSalesRev) +
+      acctRow('Total Revenue', totalRevenue, {total:true}) +
+      acctRow('Cost of Goods Sold', -cogs, {neg: cogs>0}) +
+      acctRow('Gross Profit', grossProfit, {total:true}) +
+      acctRow('Operating Expenses', -opEx, {neg: opEx>0}) +
+      acctRow('Net Profit', netProfit, {total:true, pos: netProfit>=0, neg: netProfit<0});
+
+    // ---- 3. Cash Flow (actual cash movement in the period) ----
+    const cashFromSales = periodSales.filter(s=>s.paymentType!=='credit').reduce((a,s)=>a+s.total,0);
+    let cashFromCollections = 0;
+    sales.forEach(s=>{
+      (s.payments||[]).forEach(p=>{
+        if(p.ts >= start) cashFromCollections += p.amount;
+      });
+    });
+    const totalCashIn = cashFromSales + cashFromCollections;
+    const cashOut = periodExpenses.reduce((a,e)=>a+e.amount,0);
+    let cashToSuppliers = 0;
+    payables.forEach(b=>{
+      (b.payments||[]).forEach(p=>{
+        if(p.ts >= start) cashToSuppliers += p.amount;
+      });
+    });
+    const totalCashOut = cashOut + cashToSuppliers;
+    const netCashFlow = totalCashIn - totalCashOut;
+
+    $('cfList').innerHTML =
+      acctRow('Cash from sales', cashFromSales) +
+      acctRow('Cash from credit collections', cashFromCollections) +
+      acctRow('Total Cash In', totalCashIn, {total:true}) +
+      acctRow('Cash Out (expenses)', -cashOut, {neg: cashOut>0}) +
+      acctRow('Cash paid to suppliers', -cashToSuppliers, {neg: cashToSuppliers>0}) +
+      acctRow('Total Cash Out', -totalCashOut, {total:true, neg: totalCashOut>0}) +
+      acctRow('Net Cash Flow', netCashFlow, {total:true, pos: netCashFlow>=0, neg: netCashFlow<0});
+
+    // ---- 2. Balance Sheet (as of today, all-time figures) ----
+    const allTimeCashSales = sales.filter(s=>s.paymentType!=='credit').reduce((a,s)=>a+s.total,0);
+    let allTimeCollections = 0;
+    sales.forEach(s=> (s.payments||[]).forEach(p=> allTimeCollections += p.amount));
+    const allTimeExpenses = expenses.reduce((a,e)=>a+e.amount,0);
+    let allTimeSupplierPayments = 0;
+    payables.forEach(b=> (b.payments||[]).forEach(p=> allTimeSupplierPayments += p.amount));
+    const cashOnHand = allTimeCashSales + allTimeCollections - allTimeExpenses - allTimeSupplierPayments;
+
+    const receivables = sales
+      .filter(s=>s.paymentType==='credit' && !s.paid)
+      .reduce((a,s)=>a+remainingAmount(s),0);
+
+    const inventoryAtCost = products.reduce((a,p)=>a+((p.cost||0)*p.stock),0);
+
+    const payablesOwed = payables
+      .filter(b=>!b.paid)
+      .reduce((a,b)=>a+payableRemaining(b),0);
+
+    const totalAssets = cashOnHand + receivables + inventoryAtCost;
+    const totalLiabilities = payablesOwed;
+    const ownerEquity = totalAssets - totalLiabilities;
+
+    $('bsList').innerHTML =
+      `<div style="font-size:11px; color:var(--ink-soft); margin-bottom:4px;">Assets</div>` +
+      acctRow('Cash on hand', cashOnHand) +
+      acctRow('Accounts receivable (credit owed)', receivables) +
+      acctRow('Inventory (at cost)', inventoryAtCost) +
+      acctRow('Total Assets', totalAssets, {total:true}) +
+      `<div style="font-size:11px; color:var(--ink-soft); margin:12px 0 4px;">Liabilities</div>` +
+      acctRow('Accounts payable (owed to suppliers)', payablesOwed) +
+      acctRow('Total Liabilities', totalLiabilities, {total:true}) +
+      `<div style="font-size:11px; color:var(--ink-soft); margin:12px 0 4px;">Equity</div>` +
+      acctRow("Owner's Equity", ownerEquity, {total:true});
   }
 
   function renderMonthly(){
@@ -1260,6 +1507,96 @@
     $('eAmount').value = '';
     render();
     showToast('Expense added');
+  });
+
+  $('addPayableBtn').addEventListener('click', async ()=>{
+    const supplierName = $('payableSupplier').value.trim();
+    const note = $('payableNote').value.trim();
+    const amount = parseFloat($('payableAmount').value);
+    if(!supplierName || !note || isNaN(amount) || amount<=0){
+      showToast('Enter supplier, what was purchased, and an amount');
+      return;
+    }
+    payables.push({ id:'pb'+Date.now(), supplierName, note, amount, paid:false, payments:[], ts: Date.now() });
+    await savePayables();
+    $('payableSupplier').value = '';
+    $('payableNote').value = '';
+    $('payableAmount').value = '';
+    render();
+    showToast('Supplier bill added');
+  });
+
+  let payingPayableId = null;
+
+  function openSupplierPaymentSheet(billId){
+    payingPayableId = billId;
+    renderSupplierPaymentSheet();
+    $('supplierPaymentAmountInput').value = '';
+    $('supplierPaymentOverlay').classList.add('open');
+  }
+
+  function renderSupplierPaymentSheet(){
+    const bill = payables.find(b=>b.id===payingPayableId);
+    if(!bill){ $('supplierPaymentOverlay').classList.remove('open'); return; }
+    const paidSoFar = payablePaidAmount(bill);
+    const remaining = payableRemaining(bill);
+    $('supplierPaymentTitle').textContent = bill.supplierName + ' · ' + bill.note;
+    $('supplierPaymentInfo').textContent = 'Total ' + fmt(bill.amount) + ' · Paid ' + fmt(paidSoFar) + ' · Remaining ' + fmt(remaining);
+    $('supplierPaymentAmountInput').max = remaining;
+
+    const history = bill.payments || [];
+    if(history.length===0){
+      $('supplierPaymentHistoryList').innerHTML = '<div class="empty">No payments yet.</div>';
+    } else {
+      $('supplierPaymentHistoryList').innerHTML = [...history].sort((a,b)=>b.ts-a.ts).map(p=>{
+        const time = new Date(p.ts).toLocaleString('en-LK', {hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'});
+        return `<div class="list-row">
+          <div><div class="name">Payment</div><div class="meta">${time}</div></div>
+          <span class="pill mono">${fmt(p.amount)}</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  async function addPaymentToPayable(amount){
+    const bill = payables.find(b=>b.id===payingPayableId);
+    if(!bill) return;
+    const remaining = payableRemaining(bill);
+    if(amount <= 0){ showToast('Enter an amount above 0'); return; }
+    if(amount > remaining) amount = remaining;
+    if(!bill.payments) bill.payments = [];
+    bill.payments.push({ amount, ts: Date.now() });
+    if(payableRemaining(bill) <= 0){ bill.paid = true; }
+    await savePayables();
+    render();
+    if(bill.paid){
+      $('supplierPaymentOverlay').classList.remove('open');
+      showToast('Bill paid in full');
+    } else {
+      renderSupplierPaymentSheet();
+      $('supplierPaymentAmountInput').value = '';
+      showToast('Payment recorded');
+    }
+  }
+
+  $('addSupplierPaymentBtn').addEventListener('click', ()=>{
+    const amount = parseFloat($('supplierPaymentAmountInput').value);
+    if(isNaN(amount) || amount<=0){ showToast('Enter a valid amount'); return; }
+    addPaymentToPayable(amount);
+  });
+  $('supplierPayFullBtn').addEventListener('click', ()=>{
+    const bill = payables.find(b=>b.id===payingPayableId);
+    if(!bill) return;
+    addPaymentToPayable(payableRemaining(bill));
+  });
+  $('cancelSupplierPaymentBtn').addEventListener('click', ()=> $('supplierPaymentOverlay').classList.remove('open'));
+  $('supplierPaymentOverlay').addEventListener('click', (e)=>{ if(e.target===$('supplierPaymentOverlay')) $('supplierPaymentOverlay').classList.remove('open'); });
+
+  document.querySelectorAll('[data-period]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      accountsPeriod = btn.dataset.period;
+      renderAccounts();
+    });
   });
   function openProductSheet(id){
     editingProductId = id;

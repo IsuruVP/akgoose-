@@ -167,7 +167,13 @@
   .sheet{
     background:var(--paper); width:100%; max-width:520px; border-radius:16px 16px 0 0;
     padding:20px 18px 24px; box-shadow:0 -4px 20px rgba(0,0,0,0.2);
-    max-height:85vh; overflow-y:auto;
+    max-height:85vh; overflow-y:auto; position:relative;
+  }
+  .sheet-close{
+    position:sticky; float:right; top:0; margin:-6px -6px 0 0;
+    width:32px; height:32px; border-radius:50%; border:none;
+    background:var(--card); border:1.5px solid var(--line); color:var(--ink);
+    font-size:16px; line-height:1; cursor:pointer; z-index:5;
   }
   .sheet-handle{ width:36px; height:4px; background:var(--line); border-radius:4px; margin:0 auto 14px; }
   .sheet h3{ font-size:18px; margin-bottom:14px; }
@@ -446,6 +452,7 @@
 <div class="overlay" id="sellOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="sellOverlay" aria-label="Close">✕</button>
     <h3 id="sellSheetName">Product</h3>
     <div class="sale-total mono" id="sellSheetTotal">Rs 0</div>
     <div class="qty-stepper">
@@ -482,6 +489,7 @@
 <div class="overlay" id="productOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="productOverlay" aria-label="Close">✕</button>
     <h3 id="productSheetTitle">Add Product</h3>
     <div class="field">
       <label>Product name</label>
@@ -511,6 +519,7 @@
 <div class="overlay" id="syncOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="syncOverlay" aria-label="Close">✕</button>
     <h3>Sync Across Devices</h3>
     <p style="font-size:13px; color:var(--ink-soft); margin:0 0 14px;">Connect a free Firebase project once, then use the same Stall Code on every device to keep sales and stock in sync.</p>
     <div class="field">
@@ -536,6 +545,7 @@
 <div class="overlay" id="dayDetailOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="dayDetailOverlay" aria-label="Close">✕</button>
     <h3 id="dayDetailTitle">Day</h3>
     <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--ink-soft); margin:14px 0 8px;">Cash / Stall Sales</div>
     <div class="stat-grid">
@@ -587,6 +597,7 @@
 <div class="overlay" id="paymentOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="paymentOverlay" aria-label="Close">✕</button>
     <h3 id="paymentSheetTitle">Credit Sale</h3>
     <div style="font-size:13px; color:var(--ink-soft); text-align:center; margin-bottom:14px;" id="paymentSheetInfo"></div>
     <div class="field">
@@ -607,6 +618,7 @@
 <div class="overlay" id="supplierPaymentOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="supplierPaymentOverlay" aria-label="Close">✕</button>
     <h3 id="supplierPaymentTitle">Supplier Bill</h3>
     <div style="font-size:13px; color:var(--ink-soft); text-align:center; margin-bottom:14px;" id="supplierPaymentInfo"></div>
     <div class="field">
@@ -627,6 +639,7 @@
 <div class="overlay" id="confirmOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="confirmOverlay" aria-label="Close">✕</button>
     <h3 id="confirmTitle">Are you sure?</h3>
     <p id="confirmMessage" style="font-size:14px; color:var(--ink-soft); margin:0 0 18px; line-height:1.5;"></p>
     <button class="btn btn-block" id="confirmYesBtn" style="background:var(--rust); color:#fff;">Yes, Continue</button>
@@ -1931,6 +1944,16 @@
   $('lockBtn').addEventListener('click', ()=>{
     sessionStorage.removeItem('stallUnlocked');
     location.reload();
+  });
+
+  document.querySelectorAll('.sheet-close').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      if(btn.dataset.closeOverlay === 'confirmOverlay'){
+        pendingConfirmAction = null;
+      }
+      const overlay = $(btn.dataset.closeOverlay);
+      if(overlay) overlay.classList.remove('open');
+    });
   });
 
   // ---- Init ----

@@ -252,6 +252,7 @@
     </div>
     <div style="display:flex; flex-direction:column; gap:6px;">
       <button class="reset-btn" id="syncBtn">Sync</button>
+      <button class="reset-btn" id="exportBtn">Export</button>
       <button class="reset-btn" id="renameBtn">Rename</button>
       <button class="reset-btn" id="lockBtn" style="display:none;">Lock</button>
     </div>
@@ -512,6 +513,20 @@
     <button class="btn btn-primary btn-block" id="saveProductBtn">Save Product</button>
     <button class="btn btn-outline btn-block" style="margin-top:8px;" id="cancelProductBtn">Cancel</button>
     <button class="btn-danger-text" id="deleteProductBtn" style="display:none; margin-top:10px; width:100%;">Delete this product</button>
+  </div>
+</div>
+
+<!-- Export sheet -->
+<div class="overlay" id="exportOverlay">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <button type="button" class="sheet-close" data-close-overlay="exportOverlay" aria-label="Close">✕</button>
+    <h3>Export Data (CSV)</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin:0 0 16px; line-height:1.5;">Download your data as CSV files you can open in Excel, Google Sheets, or share with an accountant.</p>
+    <button class="btn btn-primary btn-block" id="exportSalesBtn" style="margin-bottom:8px;">Export Sales</button>
+    <button class="btn btn-primary btn-block" id="exportProductsBtn" style="margin-bottom:8px;">Export Products / Inventory</button>
+    <button class="btn btn-primary btn-block" id="exportExpensesBtn" style="margin-bottom:8px;">Export Expenses</button>
+    <button class="btn btn-primary btn-block" id="exportPayablesBtn">Export Supplier Bills</button>
   </div>
 </div>
 
@@ -1422,6 +1437,83 @@
     d.textContent = str;
     return d.innerHTML;
   }
+
+  // ---- CSV export ----
+  function toCSV(rows){
+    return rows.map(row => row.map(cell=>{
+      const str = String(cell ?? '');
+      if(/[",\n]/.test(str)) return '"' + str.replace(/"/g,'""') + '"';
+      return str;
+    }).join(',')).join('\r\n');
+  }
+
+  function downloadCSV(filename, rows){
+    const csv = toCSV(rows);
+    const blob = new Blob(["\ufeff" + csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportProductsCSV(){
+    const rows = [['Name','Bought Price','Sell Price','Stock']];
+    products.forEach(p=> rows.push([p.name, p.cost||0, p.price, p.stock]));
+    downloadCSV('products.csv', rows);
+    showToast('Products exported');
+  }
+
+  function exportSalesCSV(){
+    const rows = [['Date','Time','Product','Qty','Total','Cost Per Unit','Payment Type','Stall Point','Customer','Fully Paid','Amount Paid','Remaining']];
+    [...sales].sort((a,b)=>a.ts-b.ts).forEach(s=>{
+      const date = isoDateLocal(s.ts);
+      const time = new Date(s.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+      const prod = products.find(p=>p.id===s.productId);
+      const name = prod ? prod.name : (s.productName || 'Deleted product');
+      const isCredit = s.paymentType === 'credit';
+      rows.push([
+        date, time, name, s.qty, s.total, s.cost||0,
+        isCredit ? 'Credit' : 'Cash', s.stallPoint || '', s.customerName || '',
+        isCredit ? (s.paid ? 'Yes' : 'No') : 'Yes',
+        isCredit ? paidAmount(s) : s.total,
+        isCredit ? remainingAmount(s) : 0
+      ]);
+    });
+    downloadCSV('sales.csv', rows);
+    showToast('Sales exported');
+  }
+
+  function exportExpensesCSV(){
+    const rows = [['Date','Time','Note','Category','Amount']];
+    [...expenses].sort((a,b)=>a.ts-b.ts).forEach(e=>{
+      const date = isoDateLocal(e.ts);
+      const time = new Date(e.ts).toLocaleTimeString('en-LK', {hour:'2-digit', minute:'2-digit'});
+      rows.push([date, time, e.note, e.category, e.amount]);
+    });
+    downloadCSV('expenses.csv', rows);
+    showToast('Expenses exported');
+  }
+
+  function exportPayablesCSV(){
+    const rows = [['Date','Supplier','Note','Amount','Fully Paid','Amount Paid','Remaining']];
+    [...payables].sort((a,b)=>a.ts-b.ts).forEach(b=>{
+      const date = isoDateLocal(b.ts);
+      rows.push([date, b.supplierName, b.note, b.amount, b.paid ? 'Yes' : 'No', payablePaidAmount(b), payableRemaining(b)]);
+    });
+    downloadCSV('supplier_bills.csv', rows);
+    showToast('Supplier bills exported');
+  }
+
+  $('exportBtn').addEventListener('click', ()=> $('exportOverlay').classList.add('open'));
+  $('exportSalesBtn').addEventListener('click', exportSalesCSV);
+  $('exportProductsBtn').addEventListener('click', exportProductsCSV);
+  $('exportExpensesBtn').addEventListener('click', exportExpensesCSV);
+  $('exportPayablesBtn').addEventListener('click', exportPayablesCSV);
+  $('exportOverlay').addEventListener('click', (e)=>{ if(e.target===$('exportOverlay')) $('exportOverlay').classList.remove('open'); });
 
   // ---- Tabs ----
   document.querySelectorAll('.nav-btn').forEach(btn=>{
